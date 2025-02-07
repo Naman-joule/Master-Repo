@@ -5,7 +5,7 @@ from pymongo import MongoClient
 
 # MongoDB Configuration
 MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "scraping repository"
+DB_NAME = "scraping_repository"
 COLLECTION_NAME = "yearly_data_15Min_Block_2025"
 
 # Initialize MongoDB client

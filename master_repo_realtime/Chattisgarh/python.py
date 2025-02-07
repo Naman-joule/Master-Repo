@@ -116,7 +116,7 @@ def scrape_summary_every_30_seconds(url, db_name):
 
 if __name__ == "__main__":
     url = "https://sldccg.com/gen.php"
-    db_name = "scraping repository"
+    db_name = "scraping_repository"
 
     # Run scrapers in parallel threads
     threading.Thread(target=scrape_generation_every_2_minutes, args=(url, db_name)).start()
