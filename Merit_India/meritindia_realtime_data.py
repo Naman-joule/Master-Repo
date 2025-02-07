@@ -7,7 +7,7 @@ import re
 
 # MongoDB setup
 client = MongoClient("mongodb://localhost:27017/")
-db = client["realtime_demand_data"]  # Single database for all states
+db = client["scraping repository"]  # Single database for all states
 
 # Function to clean and convert numerical values
 def clean_number(value):

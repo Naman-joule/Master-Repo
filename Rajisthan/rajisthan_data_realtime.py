@@ -12,7 +12,7 @@ from datetime import datetime
 def scrape_and_store():
     # MongoDB setup
     client = MongoClient("mongodb://localhost:27017/")
-    db = client["rajasthan_data"]
+    db = client["scraping repository"]
     collection = db["realtime_overview"]
 
     # Configure WebDriver
