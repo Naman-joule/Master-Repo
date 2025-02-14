@@ -1,55 +1,92 @@
 import requests
 import datetime
-import time  # For adding delays
-from pymongo import MongoClient
+import time
+import mysql.connector
+from mysql.connector import Error
 
-# MongoDB Configuration
-MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "scraping_repository"
-COLLECTION_NAME = "yearly_data_2025"
+# MySQL Configuration
+MYSQL_HOST = "localhost"
+MYSQL_USER = "root"
+MYSQL_PASSWORD = "Admin@123"
+MYSQL_DB = "scraping_repository"
+TABLE_NAME = "Bihar_yearly_data_2025"
+ERROR_LOG_TABLE = "error_logs"
 
-# Initialize MongoDB client
-client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
-collection = db[COLLECTION_NAME]
+# Function to establish MySQL connection
+def get_db_connection():
+    try:
+        conn = mysql.connector.connect(
+            host=MYSQL_HOST,
+            user=MYSQL_USER,
+            password=MYSQL_PASSWORD,
+            database=MYSQL_DB
+        )
+        return conn
+    except Error as e:
+        print(f"Error connecting to MySQL: {e}")
+        return None
 
-# Function to fetch data from the API
+# Function to create database and table dynamically
+def setup_database():
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        create_table_query = f'''
+        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            Date DATE,
+            TimeBlock TIME,
+            Freq FLOAT,
+            RevNo INT,
+            DemandMet FLOAT,
+            DSMMet FLOAT,
+            NB_NET_DWL FLOAT,
+            SB_NET_DWL FLOAT,
+            SB_NET_SCHD FLOAT,
+            NB_NET_SCHD FLOAT,
+            NB_DEMAND_MET FLOAT,
+            SB_DEMAND_MET FLOAT,
+            Scheduled FLOAT,
+            Actual FLOAT,
+            Deviation FLOAT,
+            UI FLOAT,
+            StateGeneration FLOAT,
+            StateRevNo INT,
+            Remarks TEXT,
+            ThermalGeneration FLOAT,
+            RAILWAY_DRAWL FLOAT,
+            UNIQUE(Date, TimeBlock)
+        )'''
+        cursor.execute(create_table_query)
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+# Function to fetch data from API
 def fetch_scada_data(date):
     url = f"https://sldc.bsptcl.co.in:8086/api/SCADA/Get/GetAllSCADADataDatewise?date={date}"
     try:
         response = requests.get(url)
-        response.raise_for_status()  # Raise an error for bad status codes
-        return response.json()  # Assuming the response is JSON
+        response.raise_for_status()
+        return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error fetching data for {date}: {e}")
         return None
 
-# Function to format data to match the required schema
-def format_data(data):
-    formatted_data = []
+# Function to format and process data
+def process_data(data, date):
+    processed_data = []
     for record in data:
         try:
-            # Correctly parse and reformat the Date and Time fields
-            raw_date = record["Date"]
-            day = raw_date[:2]  # Extract day (DD)
-            month = raw_date[2:4]  # Extract month (MM)
-            year = "20" + raw_date[4:6]  # Extract year (YY) and prefix with '20'
-            date = f"{year}-{month}-{day}"  # Reformat to YYYY-MM-DD
+            raw_time = record.get("Time", "000000")  # Default to midnight if missing
+            time_obj = datetime.datetime.strptime(raw_time, "%H%M%S").time()
+            time_block = time_obj.strftime("%H:%M:%S")
 
-            # Parse and format the Time field
-            time = datetime.datetime.strptime(record["Time"], "%H%M%S").strftime("%H:%M")
-            
-            # Ensure RevNo is properly cast to an integer
-            rev_no = record.get("RevNo", 0)
-            if isinstance(rev_no, str) or isinstance(rev_no, float):
-                rev_no = int(float(rev_no))  # Convert to float first, then to int
-            
-            # Format and typecast other fields
-            formatted_data.append({
+            processed_data.append({
                 "Date": date,
-                "Time": time,
+                "TimeBlock": time_block,
                 "Freq": float(record.get("Freq", 0.0)),
-                "RevNo": rev_no,
+                "RevNo": int(float(record.get("RevNo", 0.0))),
                 "DemandMet": float(record.get("DemandMet", 0.0)),
                 "DSMMet": float(record.get("DSMMet", 0.0)),
                 "NB_NET_DWL": float(record.get("NB_NET_DWL", 0.0)),
@@ -64,88 +101,56 @@ def format_data(data):
                 "UI": float(record.get("UI", 0.0)),
                 "StateGeneration": float(record.get("StateGeneration", 0.0)),
                 "StateRevNo": int(record.get("StateRevNo", 0)),
-                "Remarks": int(record.get("Remarks", 0)),
+                "Remarks": record.get("Remarks", ""),
                 "ThermalGeneration": float(record.get("ThermalGeneration", 0.0)),
-                "RAILWAY_DRAWL": float(record.get("RAILWAY_DRAWL", 0.0)),
+                "RAILWAY_DRAWL": float(record.get("RAILWAY_DRAWL", 0.0))
             })
-        except (ValueError, KeyError) as e:
-            print(f"Error formatting record: {record}, error: {e}")
-    return formatted_data
+        except Exception as e:
+            print(f"Error processing record: {record}, error: {e}")
+    return processed_data
 
-# Function to check if data has changed
-def has_data_changed(new_data):
-    # Fetch the latest record from MongoDB
-    last_record = collection.find_one(sort=[("_id", -1)])  # Find the latest record
-    if not last_record:
-        return True  # If no record exists, always insert the new data
+# Function to save data to MySQL
+def save_to_mysql(data):
+    if not data:
+        return
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            insert_query = f'''
+            INSERT INTO {TABLE_NAME} (
+                Date, TimeBlock, Freq, RevNo, DemandMet, DSMMet,
+                NB_NET_DWL, SB_NET_DWL, SB_NET_SCHD, NB_NET_SCHD, NB_DEMAND_MET,
+                SB_DEMAND_MET, Scheduled, Actual, Deviation, UI, StateGeneration,
+                StateRevNo, Remarks, ThermalGeneration, RAILWAY_DRAWL
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE 
+                Freq=VALUES(Freq), DemandMet=VALUES(DemandMet), Actual=VALUES(Actual)'''
+            records = [(record["Date"], record["TimeBlock"], record["Freq"], record["RevNo"],
+                        record["DemandMet"], record["DSMMet"], record["NB_NET_DWL"], record["SB_NET_DWL"],
+                        record["SB_NET_SCHD"], record["NB_NET_SCHD"], record["NB_DEMAND_MET"], record["SB_DEMAND_MET"],
+                        record["Scheduled"], record["Actual"], record["Deviation"], record["UI"],
+                        record["StateGeneration"], record["StateRevNo"], record["Remarks"],
+                        record["ThermalGeneration"], record["RAILWAY_DRAWL"]) for record in data]
+            cursor.executemany(insert_query, records)
+            conn.commit()
+            cursor.close()
+        except Error as e:
+            print(f"Error inserting data into MySQL: {e}")
+        finally:
+            conn.close()
 
-    # Compare the latest record with the new data
-    for field in new_data:
-        if field != "Time" and new_data[field] != last_record.get(field):
-            return True  # Data has changed
-    return False
-
-# Function to save data to MongoDB if it doesn't already exist
-def save_to_mongo(data):
-    if data:
-        for record in data:
-            # Check if a record with the same Date and Time already exists
-            existing_record = collection.find_one({"Date": record["Date"], "Time": record["Time"]})
-            if not existing_record:
-                try:
-                    collection.insert_one(record)
-                    print(f"Inserted record for Date: {record['Date']} and Time: {record['Time']} into MongoDB.")
-                except Exception as e:
-                    print(f"Error inserting data into MongoDB: {e}")
-            else:
-                print(f"Record already exists for Date: {record['Date']} and Time: {record['Time']}, skipping...")
-
-
-# Function to fetch historical data
+# Function to fetch and store historical data
 def fetch_historical_data(start_date, end_date):
+    setup_database()
     current_date = start_date
     while current_date <= end_date:
-        date_str = current_date.strftime("%d-%B-%Y")  # Format: 01-January-2025
+        date_str = current_date.strftime("%d-%B-%Y")
         print(f"Fetching historical data for {date_str}...")
-
-        # Fetch data from the API
         data = fetch_scada_data(date_str)
-
         if data:
-            formatted_data = format_data(data)
-            save_to_mongo(formatted_data)
-        else:
-            print(f"No data available for {date_str}")
-
-        # Move to the next day
+            processed_data = process_data(data, current_date)
+            save_to_mysql(processed_data)
         current_date += datetime.timedelta(days=1)
 
-# Function to fetch real-time data every minute
-def fetch_realtime_data():
-    while True:
-        today = datetime.date.today()
-        date_str = today.strftime("%d-%B-%Y")  # Format: 01-January-2025
-        print(f"Fetching real-time data for {date_str}...")
-
-        # Fetch data from the API
-        data = fetch_scada_data(date_str)
-
-        # Format and save data if changes are detected
-        if data:
-            formatted_data = format_data(data)
-            save_to_mongo(formatted_data)
-        else:
-            print(f"No data available for {date_str}")
-
-        # Wait for 1 minute before fetching again
-        time.sleep(60)
-
-# Start the process
-start_date = datetime.date(2025, 1, 1)
-end_date = datetime.date.today()
-
-# Fetch historical data first
-fetch_historical_data(start_date, end_date)
-
-# Start real-time data fetching
-fetch_realtime_data()
+fetch_historical_data(datetime.date(2025, 1, 1), datetime.date.today())

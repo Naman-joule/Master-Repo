@@ -1,4 +1,6 @@
 import time
+import mysql.connector
+import re
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -6,15 +8,70 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
-from pymongo import MongoClient
 from datetime import datetime
 
-def scrape_and_store():
-    # MongoDB setup
-    client = MongoClient("mongodb://localhost:27017/")
-    db = client["scraping_repository"]
-    collection = db["realtime_overview"]
+# 🔹 MySQL Database Connection Function
+def connect_db():
+    return mysql.connector.connect(
+        host="localhost",
+        user="root",         # Replace with your MySQL username
+        password="Admin@123", # Replace with your MySQL password
+    )
 
+# 🔹 Create Database and Table Dynamically
+def setup_database():
+    db = connect_db()
+    cursor = db.cursor()
+    
+    cursor.execute("CREATE DATABASE IF NOT EXISTS scraping_repository")
+    cursor.execute("USE scraping_repository")
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS rajisthan_realtime_overview (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            inserted_at DATETIME,
+            Date DATE,
+            Time TIME
+        )
+    """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS error_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            error_message TEXT,
+            logged_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    db.commit()
+    cursor.close()
+    db.close()
+
+# 🔹 Function to Sanitize Column Names
+def sanitize_column_name(name):
+    return re.sub(r'[^a-zA-Z0-9_]', '_', name)
+
+# 🔹 Function to Log Errors in MySQL
+def log_error(error_message):
+    db = mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="Admin@123",
+        database="scraping_repository"
+    )
+    cursor = db.cursor()
+    
+    cursor.execute("""
+        INSERT INTO error_logs (error_message) VALUES (%s)
+    """, (error_message,))
+    
+    db.commit()
+    cursor.close()
+    db.close()
+    print(f"❌ Logged error: {error_message}")
+
+# 🔹 Scrape and Store Data in MySQL
+def scrape_and_store():
     # Configure WebDriver
     options = Options()
     options.add_argument("--headless")  # Run in headless mode
@@ -27,7 +84,7 @@ def scrape_and_store():
         url = "https://sldc.rajasthan.gov.in/rrvpnl/rajasthan-overview"
         driver.get(url)
 
-        # Wait for the table to load (waiting for tbody with rows)
+        # Wait for the table to load
         wait = WebDriverWait(driver, 15)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#overview_data tbody tr")))
 
@@ -35,47 +92,80 @@ def scrape_and_store():
         table = driver.find_element(By.ID, "overview_data")
         rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
 
-        # Extract data from the table
-        record = {
-            "inserted_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+        # Extract data
+        inserted_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        data = {
+            "inserted_at": inserted_at,
+            "Date": "",
+            "Time": "",
         }
 
         for row in rows:
             cols = row.find_elements(By.TAG_NAME, "td")
-            if len(cols) == 3:  # Ensure the row has the correct number of columns
-                scada_name = cols[0].text.strip()
+            if len(cols) == 3:  # Ensure correct number of columns
+                scada_name = sanitize_column_name(cols[0].text.strip().upper().replace(" ", "_"))  # Sanitize column name
                 value = float(cols[1].text.strip())
                 datetime_str = cols[2].text.strip()
 
                 # Parse datetime into separate Date and Time fields
                 dt_object = datetime.strptime(datetime_str, "%d %b %Y %H:%M:%S")
-                record["Date"] = dt_object.strftime("%Y-%m-%d")
-                record["Time"] = dt_object.strftime("%H:%M")
-                record[scada_name] = value
+                data["Date"] = dt_object.strftime("%Y-%m-%d")
+                data["Time"] = dt_object.strftime("%H:%M")
 
-        # Check if the new record is different from the last inserted record
-        last_record = collection.find_one(sort=[("_id", -1)])
-        if last_record:
-            # Remove MongoDB-specific fields for comparison
-            last_record.pop("_id", None)
-            last_record.pop("inserted_at", None)
+                # Store value in the corresponding field
+                data[scada_name] = value
 
-        if last_record != record:
-            collection.insert_one(record)
-            print("Data inserted successfully into MongoDB")
-        else:
-            print("No changes detected. Data not inserted.")
+        # Store Data in MySQL
+        insert_data(data)
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        log_error(str(e))
 
     finally:
-        # Close the WebDriver and MongoDB connection
         driver.quit()
-        client.close()
 
-# Run the function every 1 minute
+# 🔹 Insert Data into MySQL
+def insert_data(data):
+    db = mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="Admin@123",
+        database="scraping_repository"
+    )
+    cursor = db.cursor()
+    
+    # Ensure all columns exist in the table
+    cursor.execute("SHOW COLUMNS FROM rajisthan_realtime_overview")
+    existing_columns = [column[0] for column in cursor.fetchall()]
+    
+    for key in data.keys():
+        sanitized_key = sanitize_column_name(key)
+        if sanitized_key not in existing_columns:
+            cursor.execute(f"ALTER TABLE rajisthan_realtime_overview ADD COLUMN {sanitized_key} FLOAT NULL")
+    
+    db.commit()
+    
+    try:
+        columns = ", ".join([sanitize_column_name(col) for col in data.keys()])
+        placeholders = ", ".join(["%s"] * len(data))
+        sql_query = f"INSERT INTO rajisthan_realtime_overview ({columns}) VALUES ({placeholders})"
+        sql_values = tuple(data.values())
+        
+        cursor.execute(sql_query, sql_values)
+        db.commit()
+        print("✅ Data inserted successfully into MySQL")
+    
+    except mysql.connector.Error as e:
+        log_error(f"MySQL Error: {e}")
+        print(f"❌ MySQL Error: {e}")
+    
+    finally:
+        cursor.close()
+        db.close()
+
+# 🔹 Run the function every 1 minute
 if __name__ == "__main__":
+    setup_database()
     while True:
         scrape_and_store()
         time.sleep(60)
