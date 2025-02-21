@@ -15,9 +15,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 def get_db_connection():
     return mysql.connector.connect(
         host="localhost",
-        user="root",
-        password="Admin@123",
-        database="scraping_repository"
+        user="jwergos_prakarsh",
+        password="Kevlar@2001",
+        database="jwergos_scraping_repository"
     )
 
 def sanitize_column_name(name):

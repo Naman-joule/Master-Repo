@@ -6,9 +6,9 @@ from mysql.connector import Error
 
 # MySQL Configuration
 MYSQL_HOST = "localhost"
-MYSQL_USER = "root"
-MYSQL_PASSWORD = "Admin@123"
-MYSQL_DB = "scraping_repository"
+MYSQL_USER = "jwergos_prakarsh"
+MYSQL_PASSWORD = "Kevlar@2001"
+MYSQL_DB = "jwergos_scraping_repository"
 TABLE_NAME = "Bihar_yearly_data_15Min_Block_2025"
 ERROR_LOG_TABLE = "error_logs"
 

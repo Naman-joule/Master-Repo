@@ -12,9 +12,9 @@ SCRAPER_API_KEY = "e7e88af9057b9cf9d36378ed364728a8"
 def connect_db():
     return mysql.connector.connect(
         host="localhost",
-        user="root",
-        password="Admin@123",
-        database="scraping_repository"
+        user="jwergos_prakarsh",
+        password="Kevlar@2001",
+        database="jwergos_scraping_repository"
     )
 
 # 🔹 Fetch data via ScraperAPI

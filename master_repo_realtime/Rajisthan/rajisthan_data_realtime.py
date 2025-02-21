@@ -14,8 +14,8 @@ from datetime import datetime
 def connect_db():
     return mysql.connector.connect(
         host="localhost",
-        user="root",         # Replace with your MySQL username
-        password="Admin@123", # Replace with your MySQL password
+        user="jwergos_prakarsh",         # Replace with your MySQL username
+        password="Kevlar@2001", # Replace with your MySQL password
     )
 
 # 🔹 Create Database and Table Dynamically
@@ -24,7 +24,7 @@ def setup_database():
     cursor = db.cursor()
     
     cursor.execute("CREATE DATABASE IF NOT EXISTS scraping_repository")
-    cursor.execute("USE scraping_repository")
+    cursor.execute("USE jwergos_scraping_repository")
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS rajisthan_realtime_overview (
