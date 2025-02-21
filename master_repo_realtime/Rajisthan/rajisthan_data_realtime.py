@@ -166,6 +166,6 @@ def insert_data(data):
 # 🔹 Run the function every 1 minute
 if __name__ == "__main__":
     setup_database()
-    while True:
-        scrape_and_store()
-        time.sleep(60)
+    
+    scrape_and_store()
+        

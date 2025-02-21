@@ -88,35 +88,27 @@ def sanitize_column_name(name):
 def create_tables():
     conn = get_db_connection()
     cursor = conn.cursor()
+    
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS generation_data_chhattisgarh (
+        CREATE TABLE IF NOT EXISTS cg_system_summary (
             id INT AUTO_INCREMENT PRIMARY KEY,
             TIME VARCHAR(10),
             DATE DATE,
-            KWB_UNIT_1 FLOAT,
-            KWB_UNIT_2 FLOAT,
-            KWB_UNIT_3 FLOAT,
-            KWB_UNIT_4 FLOAT,
-            KWB_UNIT_5 FLOAT,
-            KORBA_WEST_BANK_TPS_TOTAL FLOAT,
-            DSPMTPS_UNIT_1 FLOAT,
-            DSPMTPS_UNIT_2 FLOAT,
-            DSPM_TPS_TOTAL FLOAT,
-            BANGO_UNIT_1 FLOAT,
-            BANGO_UNIT_2 FLOAT,
-            BANGO_UNIT_3 FLOAT,
-            BANGO_TOTAL FLOAT,
-            MARWA_UNIT_1 FLOAT,
-            MARWA_UNIT_2 FLOAT,
-            MARWA_TPS_TOTAL FLOAT,
-            CSPGCL_TOTAL FLOAT,
-            OTHER_INTRASTATE_INJECTION FLOAT,
-            CSPGCL_IPP_CPP_TOTAL FLOAT,
+            NORMAL_RATE_OF_CHARGE_FOR_DEVIATION FLOAT,
+            WR_FREQUENCY FLOAT,
+            POWER_AVAILABILITY FLOAT,
+            CG_DEMAND FLOAT,
+            CG_SCHEDULE FLOAT,
+            CG_DRAWL_FROM_CENTRAL_SECTOR FLOAT,
+            CG_UNDER_DRAWL_OVER_DRAWL FLOAT,
+            SOLAR_INJECTION_AT_132_LEVEL FLOAT,
+            BIOMASS_INJECTION FLOAT,
+            LOAD_SHEEDING_MW FLOAT,
+            UNRESTRICTED_DEMAND FLOAT,
             inserted_at DATETIME,
             updated_at DATETIME
         )
     """)
-    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS error_log (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -127,46 +119,25 @@ def create_tables():
     conn.commit()
     conn.close()
 
-def scrape_generation_data(table):
+
+def scrape_cg_system_summary(table):
     try:
-        generation_data = {}
+        system_summary = {}
         now = datetime.now()
-        generation_data["TIME"] = now.strftime("%H:%M")
-        generation_data["DATE"] = now.strftime("%Y-%m-%d")
+        system_summary["TIME"] = now.strftime("%H:%M")
+        system_summary["DATE"] = now.strftime("%Y-%m-%d")
 
         rows = table.find_all('tr')
-        current_section = None  # Track the section (e.g., KORBA WEST BANK TPS, DSPM TPS)
-
         for row in rows:
             cols = row.find_all('td')
-
-            # If the row is a section header (colspan=2), store the section name
-            if len(cols) == 1 and "colspan" in cols[0].attrs:
-                current_section = sanitize_column_name(cols[0].text.strip())  # Store section
-                continue
-
-            # Normal data row with 2 columns (key-value pairs)
             if len(cols) == 2:
                 key = sanitize_column_name(cols[0].text.strip())
                 value = float(cols[1].text.strip())
-
-                # If it's a total row, prefix it with the section name
-                if key == "TOTAL" and current_section:
-                    key = f"{current_section}_TOTAL"
-
-                # Rename section-specific units for MySQL consistency
-                key = key.replace("BANGO_UNIT_HPS_TOTAL", "BANGO_TOTAL")
-                key = key.replace("MARWA_UNIT_TPS_TOTAL", "MARWA_TPS_TOTAL")
-                
-                generation_data[key] = value
-
-        print(f"Scraped Data: {generation_data}")  # Log the scraped data
-        return generation_data
-
+                system_summary[key] = value
+        return system_summary
     except Exception as e:
-        print(f"An error occurred while scraping generation data: {e}")
+        print(f"An error occurred while scraping system summary: {e}")
         return {}
-
     
 def log_error(error_message):
     """Logs errors into the database."""
@@ -209,30 +180,29 @@ def save_to_mysql(data, table_name):
     except Exception as e:
         print(f"An error occurred while saving to MySQL: {e}")
 
-def scrape_generation_every_2_minutes(url):
+
+def scrape_summary_every_30_seconds(url):
     try:
         response = requests.get(url, verify=False)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
-        generation_table = soup.find('table', class_='table table-bordered mytable')
-        if generation_table:
-            generation_data = scrape_generation_data(generation_table)
-            save_to_mysql(generation_data, "generation_data_chhattisgarh")
+        system_summary_table = soup.find('div', class_='updatea').find('table', class_='table')
+        if system_summary_table:
+            system_summary_data = scrape_cg_system_summary(system_summary_table)
+            save_to_mysql(system_summary_data, "cg_system_summary")
     except Exception as e:
-        print(f"An error occurred during generation data scraping: {e}")
-
-
+        print(f"An error occurred during system summary scraping: {e}")
 
 if __name__ == "__main__":
     url = "https://sldccg.com/gen.php"
     create_tables()
 
-    gen_thread = threading.Thread(target=scrape_generation_every_2_minutes, args=(url,))
+    summary_thread = threading.Thread(target=scrape_summary_every_30_seconds, args=(url,))
     
-    gen_thread.start()
+    summary_thread.start()
 
     try:
-        gen_thread.join()
+        summary_thread.join()
     except KeyboardInterrupt:
         logging.info("Shutting down gracefully...")
         terminate_event.set()
