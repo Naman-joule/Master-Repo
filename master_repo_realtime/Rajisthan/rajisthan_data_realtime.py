@@ -55,8 +55,8 @@ def sanitize_column_name(name):
 def log_error(error_message):
     db = mysql.connector.connect(
         host="localhost",
-        user="root",
-        password="Admin@123",
+        user="jwergos_prakarsh",
+        password="Kevlar@2001",
         database="scraping_repository"
     )
     cursor = db.cursor()

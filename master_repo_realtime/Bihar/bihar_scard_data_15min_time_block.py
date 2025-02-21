@@ -161,6 +161,7 @@ def fetch_historical_and_realtime_data():
     setup_database()
     start_date = datetime.date(2025, 1, 1)
     current_date = datetime.date.today()
+    # Fetch historical data
     while start_date < current_date:
         date_str = start_date.strftime("%d-%B-%Y")
         print(f"Fetching data for {date_str}...")
@@ -169,13 +170,15 @@ def fetch_historical_and_realtime_data():
             formatted_data = format_and_group_data(data, start_date)
             save_to_mysql(formatted_data)
         start_date += datetime.timedelta(days=1)
-    while True:
-        date_str = current_date.strftime("%d-%B-%Y")
-        print(f"Fetching real-time data for {date_str}...")
-        data = fetch_scada_data(date_str)
-        if data:
-            formatted_data = format_and_group_data(data, current_date)
-            save_to_mysql(formatted_data)
-        time.sleep(900)
+
+        # Fetch real-time data only once
+    date_str = current_date.strftime("%d-%B-%Y")
+    print(f"Fetching real-time data for {date_str}...")
+    data = fetch_scada_data(date_str)
+    if data:
+        formatted_data = format_and_group_data(data, current_date)
+        save_to_mysql(formatted_data)
+
+    print("Data fetching complete. Exiting.")
 
 fetch_historical_and_realtime_data()
