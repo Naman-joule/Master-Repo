@@ -23,7 +23,7 @@ def setup_database():
     db = connect_db()
     cursor = db.cursor()
     
-    cursor.execute("CREATE DATABASE IF NOT EXISTS scraping_repository")
+    cursor.execute("CREATE DATABASE IF NOT EXISTS jwergos_scraping_repository")
     cursor.execute("USE jwergos_scraping_repository")
     
     cursor.execute("""
